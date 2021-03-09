@@ -26,6 +26,7 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
+	"github.com/wxnacy/wgo/arrays"
 	"sigs.k8s.io/descheduler/pkg/api"
 	"sigs.k8s.io/descheduler/pkg/descheduler/evictions"
 	nodeutil "sigs.k8s.io/descheduler/pkg/descheduler/node"
@@ -72,6 +73,10 @@ func LowNodeUtilization(ctx context.Context, client clientset.Interface, strateg
 		klog.ErrorS(err, "Invalid LowNodeUtilization parameters")
 		return
 	}
+	if len(strategy.Params.Namespaces.Include) > 0 {
+		fmt.Sprintf("Namespaces that allow eviction %s\n", strategy.Params.Namespaces.Include)
+	}
+
 	thresholdPriority, err := utils.GetPriorityFromStrategyParams(ctx, client, strategy.Params)
 	if err != nil {
 		klog.ErrorS(err, "Failed to get threshold priority from strategy's params")
@@ -140,7 +145,8 @@ func LowNodeUtilization(ctx context.Context, client clientset.Interface, strateg
 		targetNodes,
 		lowNodes,
 		podEvictor,
-		evictable.IsEvictable)
+		evictable.IsEvictable,
+		strategy)
 }
 
 // validateStrategyConfig checks if the strategy's config is valid
@@ -276,6 +282,7 @@ func evictPodsFromTargetNodes(
 	targetNodes, lowNodes []NodeUsage,
 	podEvictor *evictions.PodEvictor,
 	podFilter func(pod *v1.Pod) bool,
+	strategy api.DeschedulerStrategy,
 ) {
 
 	sortNodesByUsage(targetNodes)
@@ -308,18 +315,26 @@ func evictPodsFromTargetNodes(
 		klog.V(3).InfoS("Evicting pods from node", "node", klog.KObj(node.node), "usage", node.usage)
 
 		nonRemovablePods, removablePods := classifyPods(node.allPods, podFilter)
-		klog.V(2).InfoS("Pods on node", "node", klog.KObj(node.node), "allPods", len(node.allPods), "nonRemovablePods", len(nonRemovablePods), "removablePods", len(removablePods))
+		for _, pod := range removablePods {
+			klog.V(1).InfoS("RemovablePods", "Namespace", pod.Namespace, "Pod", pod.Name)
+			if arrays.ContainsString(strategy.Params.Namespaces.Include, pod.Namespace) == -1 {
+				klog.V(1).InfoS("Pod is not allowed to migrate", "Namespace", pod.Namespace, "Pod", pod.Name)
+				continue
+			}
+			klog.V(2).InfoS("Pods on node", "node", klog.KObj(node.node), "allPods", len(node.allPods), "nonRemovablePods", len(nonRemovablePods), "removablePods", len(removablePods))
 
-		if len(removablePods) == 0 {
-			klog.V(1).InfoS("No removable pods on node, try next node", "node", klog.KObj(node.node))
-			continue
+			if len(removablePods) == 0 {
+				klog.V(1).InfoS("No removable pods on node, try next node", "node", klog.KObj(node.node))
+				continue
+			}
+
+			klog.V(1).InfoS("Evicting pods based on priority, if they have same priority, they'll be evicted based on QoS tiers")
+			// sort the evictable Pods based on priority. This also sorts them based on QoS. If there are multiple pods with same priority, they are sorted based on QoS tiers.
+			podutil.SortPodsBasedOnPriorityLowToHigh(removablePods)
+			evictPods(ctx, removablePods, node, totalAvailableUsage, taintsOfLowNodes, podEvictor)
+			klog.V(1).InfoS("Evicted pods from node", "node", klog.KObj(node.node), "evictedPods", podEvictor.NodeEvicted(node.node), "usage", node.usage)
 		}
 
-		klog.V(1).InfoS("Evicting pods based on priority, if they have same priority, they'll be evicted based on QoS tiers")
-		// sort the evictable Pods based on priority. This also sorts them based on QoS. If there are multiple pods with same priority, they are sorted based on QoS tiers.
-		podutil.SortPodsBasedOnPriorityLowToHigh(removablePods)
-		evictPods(ctx, removablePods, node, totalAvailableUsage, taintsOfLowNodes, podEvictor)
-		klog.V(1).InfoS("Evicted pods from node", "node", klog.KObj(node.node), "evictedPods", podEvictor.NodeEvicted(node.node), "usage", node.usage)
 	}
 }
 
