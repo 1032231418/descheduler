@@ -1,0 +1,44 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: descheduler-policy-configmap
+  namespace: kube-system
+data:
+  policy.yaml: |
+    apiVersion: "descheduler/v1alpha1"
+    kind: "DeschedulerPolicy"
+    strategies:
+      "PodLifeTime":
+         enabled: true
+         params:
+            podLifeTime:
+              maxPodLifeTimeSeconds: 86400
+            namespaces:
+              include:
+              - "dev"
+              - "test"
+              - "stga"
+              - "stgb"
+      "RemoveDuplicates":
+         enabled: true
+      "RemovePodsViolatingInterPodAntiAffinity":
+         enabled: true
+      "LowNodeUtilization":
+         enabled: true
+         params:
+           namespaces:
+             include:
+             - "dev"
+             - "test"
+             - "stga"
+             - "stgb"
+           nodeResourceUtilizationThresholds:
+             thresholds:
+               "cpu" : 50
+               "memory": 20
+               "pods": 20
+             targetThresholds:
+               "cpu" : 70
+               "memory": 30
+               "pods": 20
