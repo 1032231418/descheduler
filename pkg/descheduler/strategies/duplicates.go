@@ -19,6 +19,7 @@ package strategies
 import (
 	"context"
 	"fmt"
+	"github.com/wxnacy/wgo/arrays"
 	"math"
 	"reflect"
 	"sort"
@@ -156,6 +157,11 @@ func RemoveDuplicatePods(
 					if reflect.DeepEqual(keys, podContainerKeys) {
 						matched = true
 						klog.V(3).InfoS("Duplicate found", "pod", klog.KObj(pod))
+						klog.V(1).InfoS("RemoveDuplicatePods", "Namespace", pod.Namespace, "Pod", pod.Name)
+						if arrays.ContainsString(strategy.Params.Namespaces.Include, pod.Namespace) == -1 {
+							klog.V(1).InfoS("Pod is not allowed to migrate", "Namespace", pod.Namespace, "Pod", pod.Name)
+							continue
+						}
 						for _, ownerRef := range ownerRefList {
 							ownerKey := podOwner{
 								namespace:  pod.ObjectMeta.Namespace,

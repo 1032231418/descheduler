@@ -316,7 +316,7 @@ func evictPodsFromTargetNodes(
 
 		nonRemovablePods, removablePods := classifyPods(node.allPods, podFilter)
 		for _, pod := range removablePods {
-			klog.V(1).InfoS("RemovablePods", "Namespace", pod.Namespace, "Pod", pod.Name)
+			klog.V(1).InfoS("LowNodeUtilization RemovablePods", "Namespace", pod.Namespace, "Pod", pod.Name)
 			if arrays.ContainsString(strategy.Params.Namespaces.Include, pod.Namespace) == -1 {
 				klog.V(1).InfoS("Pod is not allowed to migrate", "Namespace", pod.Namespace, "Pod", pod.Name)
 				continue
